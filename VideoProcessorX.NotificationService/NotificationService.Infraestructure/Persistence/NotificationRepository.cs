@@ -12,17 +12,19 @@ namespace NotificationService.Infraestructure.Persistence
             _dbContext = dbContext;
         }
 
-        public async Task<int> CreateAsync(Notification notification)
+        public async Task CreateAsync(Notification notification)
         {
-            _dbContext.Notifications.Add(notification);
-            await _dbContext.SaveChangesAsync();
-            return notification.Id;
+            await _dbContext.Notifications.AddAsync(notification);
         }
 
         public async Task UpdateAsync(Notification notification)
         {
             _dbContext.Notifications.Update(notification);
-            await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task<Notification> GetByIdAsync(int id)
+        {
+            return await _dbContext.Notifications.FindAsync(id);
         }
     }
 }

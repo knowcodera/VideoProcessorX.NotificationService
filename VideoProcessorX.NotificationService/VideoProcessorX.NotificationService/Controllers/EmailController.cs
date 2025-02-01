@@ -8,31 +8,18 @@ namespace NotificationService.Presentation.Controllers
     [Route("api/[controller]")]
     public class EmailController : ControllerBase
     {
-        private readonly IEmailSender _emailSender;
+        private readonly INotificationEmailService _notificationService;
 
-        public EmailController(IEmailSender emailSender)
+        public EmailController(INotificationEmailService notificationService)
         {
-            _emailSender = emailSender;
+            _notificationService = notificationService;
         }
 
-        /// <summary>
-        /// Endpoint para enviar um e-mail de teste via POST /api/email/test
-        /// </summary>
         [HttpPost("test")]
         public async Task<IActionResult> SendTestEmail([FromBody] EmailRequestDto request)
         {
-            if (string.IsNullOrWhiteSpace(request.To))
-                return BadRequest("O campo 'To' é obrigatório.");
-
-            try
-            {
-                await _emailSender.SendEmailAsync(request.To, request.Subject, request.Body);
-                return Ok("E-mail enviado com sucesso!");
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Erro ao enviar e-mail: {ex.Message}");
-            }
+            await _notificationService.NotifyAsync(request.To, request.Subject, request.Body);
+            return Ok();
         }
     }
 }

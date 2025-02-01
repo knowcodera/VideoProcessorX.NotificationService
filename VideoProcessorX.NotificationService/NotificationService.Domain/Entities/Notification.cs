@@ -9,5 +9,8 @@
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public bool Sent { get; set; }
         public DateTime? SentAt { get; set; }
+        public int Attempts { get; set; } // Novo campo
+        public string LastError { get; set; }
+
     }
 }

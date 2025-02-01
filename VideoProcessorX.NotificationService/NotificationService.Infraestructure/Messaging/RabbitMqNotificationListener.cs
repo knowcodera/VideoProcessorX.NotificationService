@@ -14,10 +14,10 @@ namespace NotificationService.Infraestructure.Messaging
     {
         private readonly ILogger<RabbitMqNotificationListener> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
-
         private IConnection _connection;
         private IModel _channel;
-        private const string QUEUE_NAME = "notification.events";
+        private const string QueueName = "notification.events";
+        private const string DeadLetterExchange = "dlx.notifications";
 
         public RabbitMqNotificationListener(
             ILogger<RabbitMqNotificationListener> logger,
@@ -25,74 +25,139 @@ namespace NotificationService.Infraestructure.Messaging
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
+            InitializeRabbitMq();
+        }
+
+        private void InitializeRabbitMq()
+        {
+            try
+            {
+                var factory = new ConnectionFactory()
+                {
+                    HostName = "localhost",
+                    UserName = "guest",
+                    Password = "guest",
+                    DispatchConsumersAsync = true,
+                    AutomaticRecoveryEnabled = true,
+                    NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
+                };
+
+                _connection = factory.CreateConnection();
+                _channel = _connection.CreateModel();
+
+                // Configuração da DLX
+                _channel.ExchangeDeclare(DeadLetterExchange, ExchangeType.Fanout, durable: true);
+                var dlxQueue = _channel.QueueDeclare("dead_letter_queue", durable: true, exclusive: false, autoDelete: false);
+
+                _channel.QueueBind(dlxQueue.QueueName, DeadLetterExchange, "");
+
+                // Configuração da fila principal
+                var args = new Dictionary<string, object>
+                {
+                    { "x-dead-letter-exchange", DeadLetterExchange }
+                };
+
+                _channel.QueueDeclare(
+                    queue: QueueName,
+                    durable: true,
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: args);
+
+                _channel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+
+                _logger.LogInformation("RabbitMQ listener initialized for queue: {QueueName}", QueueName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogCritical(ex, "RabbitMQ initialization failed");
+                throw;
+            }
         }
 
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // 1) Criar conexão com RabbitMQ
-            var factory = new ConnectionFactory
-            {
-                HostName = "localhost",
-                DispatchConsumersAsync = true
-            };
+            stoppingToken.Register(() =>
+                _logger.LogInformation("Stopping queue consumption: {QueueName}", QueueName));
 
-            _connection = factory.CreateConnection();
-            _channel = _connection.CreateModel();
-            _channel.QueueDeclare(
-                queue: QUEUE_NAME,
-                durable: true,
-                exclusive: false,
-                autoDelete: false,
-                arguments: null);
-
-            // 2) Configura consumer
             var consumer = new AsyncEventingBasicConsumer(_channel);
-            consumer.Received += OnMessageReceivedAsync;
+            consumer.Received += ProcessMessageAsync;
 
             _channel.BasicConsume(
-                queue: QUEUE_NAME,
+                queue: QueueName,
                 autoAck: false,
                 consumer: consumer);
-
-            _logger.LogInformation("Consumindo fila: {QueueName}", QUEUE_NAME);
 
             return Task.CompletedTask;
         }
 
-        private async Task OnMessageReceivedAsync(object sender, BasicDeliverEventArgs e)
+        private async Task ProcessMessageAsync(object sender, BasicDeliverEventArgs ea)
         {
+            using var scope = _scopeFactory.CreateScope();
+            var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<RabbitMqNotificationListener>>();
+
+            string messageContent = string.Empty;
             try
             {
-                // 1) Cria escopo a cada mensagem
-                using var scope = _scopeFactory.CreateScope();
+                var body = ea.Body.ToArray();
+                messageContent = Encoding.UTF8.GetString(body);
 
-                // 2) Resolve IEmailSender (Scoped) dentro do escopo
-                var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+                logger.LogDebug("Processing message: {DeliveryTag}", ea.DeliveryTag);
 
-                // Se houver outro repositório ou DbContext, também resolva aqui
+                var message = JsonSerializer.Deserialize<NotificationMessageDto>(messageContent);
 
-                // 3) Processa a mensagem
-                var body = e.Body.ToArray();
-                var messageJson = Encoding.UTF8.GetString(body);
-                _logger.LogInformation("Mensagem recebida: {msg}", messageJson);
+                if (!IsValidMessage(message))
+                {
+                    logger.LogWarning("Invalid message received: {Content}", messageContent);
+                    _channel.BasicAck(ea.DeliveryTag, false);
+                    return;
+                }
 
-                // Exemplo: sendEmail ou chamar NotificationService etc.
-                // await emailSender.SendEmailAsync("...", "...", "...");
+                await emailSender.SendEmailAsync(
+                    message.Email,
+                    message.Subject,
+                    message.Body);
 
-                _channel.BasicAck(e.DeliveryTag, multiple: false);
+                _channel.BasicAck(ea.DeliveryTag, false);
+                logger.LogInformation("Email sent successfully to {Email}", message.Email);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(ex, "Message deserialization failed: {Content}", messageContent);
+                _channel.BasicNack(ea.DeliveryTag, false, false);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao processar mensagem.");
-                _channel.BasicNack(e.DeliveryTag, multiple: false, requeue: false);
+                logger.LogError(ex, "Error processing message: {Content}", messageContent);
+                _channel.BasicNack(ea.DeliveryTag, false, true);
             }
+        }
+
+        private bool IsValidMessage(NotificationMessageDto message)
+        {
+            return !string.IsNullOrWhiteSpace(message?.Email) &&
+                   !string.IsNullOrWhiteSpace(message.Subject) &&
+                   !string.IsNullOrWhiteSpace(message.Body);
         }
 
         public override void Dispose()
         {
-            _channel?.Close();
-            _connection?.Close();
-            base.Dispose();
+            try
+            {
+                _channel?.Close();
+                _connection?.Close();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cleaning up RabbitMQ resources");
+            }
+            finally
+            {
+                _channel?.Dispose();
+                _connection?.Dispose();
+                base.Dispose();
+            }
         }
     }
 }
