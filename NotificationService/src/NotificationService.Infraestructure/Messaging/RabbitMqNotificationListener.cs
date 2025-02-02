@@ -45,13 +45,11 @@ namespace NotificationService.Infraestructure.Messaging
                 _connection = factory.CreateConnection();
                 _channel = _connection.CreateModel();
 
-                // Configuração da DLX
                 _channel.ExchangeDeclare(DeadLetterExchange, ExchangeType.Fanout, durable: true);
                 var dlxQueue = _channel.QueueDeclare("dead_letter_queue", durable: true, exclusive: false, autoDelete: false);
 
                 _channel.QueueBind(dlxQueue.QueueName, DeadLetterExchange, "");
 
-                // Configuração da fila principal
                 var args = new Dictionary<string, object>
                 {
                     { "x-dead-letter-exchange", DeadLetterExchange }

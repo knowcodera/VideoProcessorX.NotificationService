@@ -15,7 +15,7 @@
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
 		<PackageReference Include="TestContainers" Version="3.5.0" />
-		<PackageReference Include="Testcontainers.RabbitMq" Version="3.0.0"/>
+		<PackageReference Include="Testcontainers.RabbitMq" Version="3.0.0" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
 		<PackageReference Include="Moq" Version="4.20.72" />
 		<PackageReference Include="xunit" Version="2.9.3" />
@@ -26,10 +26,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\NotificationService.Application\NotificationService.Application.csproj" />
-		<ProjectReference Include="..\NotificationService.Domain\NotificationService.Domain.csproj" />
-		<ProjectReference Include="..\NotificationService.Infraestructure\NotificationService.Infraestructure.csproj" />
-		<ProjectReference Include="..\VideoProcessorX.NotificationService\NotificationService.Presentation.csproj" />
+		<ProjectReference Include="..\..\src\NotificationService.Application\NotificationService.Application.csproj" />
+		<ProjectReference Include="..\..\src\NotificationService.Domain\NotificationService.Domain.csproj" />
+		<ProjectReference Include="..\..\src\NotificationService.Infraestructure\NotificationService.Infraestructure.csproj" />
+		<ProjectReference Include="..\..\src\NotificationService.Presentation\NotificationService.Presentation.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
