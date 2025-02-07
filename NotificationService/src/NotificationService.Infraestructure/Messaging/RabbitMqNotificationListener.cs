@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NotificationService.Application.DTOs;
@@ -18,14 +19,18 @@ namespace NotificationService.Infraestructure.Messaging
         private IModel _channel;
         private const string QueueName = "notification.events";
         private const string DeadLetterExchange = "dlx.notifications";
+        private readonly IConfiguration _configuration;
 
         public RabbitMqNotificationListener(
             ILogger<RabbitMqNotificationListener> logger,
-            IServiceScopeFactory scopeFactory)
+            IServiceScopeFactory scopeFactory,
+            IConfiguration configuration)
         {
             _logger = logger;
             _scopeFactory = scopeFactory;
+             _configuration = configuration;
             InitializeRabbitMq();
+           
         }
 
         private void InitializeRabbitMq()
@@ -34,12 +39,13 @@ namespace NotificationService.Infraestructure.Messaging
             {
                 var factory = new ConnectionFactory()
                 {
-                    HostName = "localhost",
-                    UserName = "guest",
-                    Password = "guest",
+                    HostName = _configuration["RabbitMQ:HostName"],
+                    UserName = _configuration["RabbitMQ:UserName"],
+                    Password = _configuration["RabbitMQ:Password"],
                     DispatchConsumersAsync = true,
                     AutomaticRecoveryEnabled = true,
-                    NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
+                    NetworkRecoveryInterval = TimeSpan.FromSeconds(10),
+                    RequestedConnectionTimeout = TimeSpan.FromSeconds(15)
                 };
 
                 _connection = factory.CreateConnection();
@@ -89,7 +95,7 @@ namespace NotificationService.Infraestructure.Messaging
             return Task.CompletedTask;
         }
 
-        private async Task ProcessMessageAsync(object sender, BasicDeliverEventArgs ea)
+        public async Task ProcessMessageAsync(object sender, BasicDeliverEventArgs ea)
         {
             using var scope = _scopeFactory.CreateScope();
             var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();

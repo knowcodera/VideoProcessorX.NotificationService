@@ -71,15 +71,11 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
+
 
 app.UseHttpsRedirection();
 
@@ -87,34 +83,11 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-app.Run();
-
-// 9. Implementação das Políticas de Resiliência
-static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+if (app.Environment.IsDevelopment())
 {
-    return HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .OrResult(msg => msg.StatusCode == HttpStatusCode.TooManyRequests)
-        .WaitAndRetryAsync(
-            3,
-            retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
-            onRetry: (_, delay, retryCount, _) =>
-            {
-                Console.WriteLine($"Retentativa #{retryCount} em {delay.TotalSeconds}s");
-            });
+    app.Run(); 
 }
-
-static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
+else
 {
-    return HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .CircuitBreakerAsync(
-            5,
-            TimeSpan.FromSeconds(30),
-            onBreak: (_, breakDelay) =>
-            {
-                Console.WriteLine($"Circuito aberto por {breakDelay.TotalSeconds}s");
-            },
-            onReset: () => Console.WriteLine("Circuito fechado"),
-            onHalfOpen: () => Console.WriteLine("Circuito meio-aberto"));
+    app.Run("http://*:6565");
 }
