@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NotificationService.Application.DTOs;
+using NotificationService.Domain.DTOs;
 using NotificationService.Domain.Interfaces;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -101,39 +102,36 @@ namespace NotificationService.Infraestructure.Messaging
             var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
             var logger = scope.ServiceProvider.GetRequiredService<ILogger<RabbitMqNotificationListener>>();
 
-            string messageContent = string.Empty;
+            var messageJson = string.Empty;
             try
             {
                 var body = ea.Body.ToArray();
-                messageContent = Encoding.UTF8.GetString(body);
+                messageJson = Encoding.UTF8.GetString(body);
 
                 logger.LogDebug("Processing message: {DeliveryTag}", ea.DeliveryTag);
 
-                var message = JsonSerializer.Deserialize<NotificationMessageDto>(messageContent);
+                var dto = JsonSerializer.Deserialize<NotificationMessageDto>(messageJson);
 
-                if (!IsValidMessage(message))
+                if (!IsValidMessage(dto))
                 {
-                    logger.LogWarning("Invalid message received: {Content}", messageContent);
+                    logger.LogWarning("Invalid message received: {Content}", messageJson);
                     _channel.BasicAck(ea.DeliveryTag, false);
                     return;
                 }
 
-                await emailSender.SendEmailAsync(
-                    message.Email,
-                    message.Subject,
-                    message.Body);
+                await emailSender.SendEmailAsync(dto);
 
                 _channel.BasicAck(ea.DeliveryTag, false);
-                logger.LogInformation("Email sent successfully to {Email}", message.Email);
+                logger.LogInformation("Email sent successfully to {Email}", dto.Email);
             }
             catch (JsonException ex)
             {
-                logger.LogError(ex, "Message deserialization failed: {Content}", messageContent);
+                logger.LogError(ex, "Message deserialization failed: {Content}", messageJson);
                 _channel.BasicNack(ea.DeliveryTag, false, false);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error processing message: {Content}", messageContent);
+                logger.LogError(ex, "Error processing message: {Content}", messageJson);
                 _channel.BasicNack(ea.DeliveryTag, false, true);
             }
         }

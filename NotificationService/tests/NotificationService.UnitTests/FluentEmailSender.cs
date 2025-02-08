@@ -2,6 +2,7 @@
 using FluentEmail.Core.Models;
 using Microsoft.Extensions.Logging;
 using Moq;
+using NotificationService.Domain.DTOs;
 using NotificationService.Infraestructure.Email;
 using Polly.CircuitBreaker;
 using System.Net.Mail;
@@ -24,8 +25,17 @@ namespace NotificationService.UnitTests
 
             var sender = new FluentEmailSender(fluentEmailMock.Object, loggerMock.Object);
 
+            var dto = new NotificationMessageDto
+            {
+                Email = "teste@teste.com",
+                Subject = "assunto",
+                Body = "corpo",
+                AttachmentPath = null,
+                IsProcessingUpdate = false
+            };
+
             // Act
-            await sender.SendEmailAsync("teste@teste.com", "assunto", "corpo");
+            await sender.SendEmailAsync(dto);
 
             // Assert
             fluentEmailMock.Verify(f => f.SendAsync(null), Times.Exactly(3));
@@ -38,6 +48,15 @@ namespace NotificationService.UnitTests
             var fluentEmailMock = new Mock<IFluentEmail>();
             var loggerMock = new Mock<ILogger<FluentEmailSender>>();
 
+            var dto = new NotificationMessageDto
+            {
+                Email = "teste@teste.com",
+                Subject = "assunto",
+                Body = "corpo",
+                AttachmentPath = null,
+                IsProcessingUpdate = false
+            };
+
             fluentEmailMock.Setup(f => f.SendAsync(null))
                 .ThrowsAsync(new SmtpException("Server busy"));
 
@@ -47,11 +66,11 @@ namespace NotificationService.UnitTests
             for (int i = 0; i < 5; i++)
             {
                 await Assert.ThrowsAsync<SmtpException>(() =>
-                    sender.SendEmailAsync("teste@teste.com", "assunto", "corpo"));
+                    sender.SendEmailAsync(dto));
             }
 
             await Assert.ThrowsAsync<BrokenCircuitException>(() =>
-                sender.SendEmailAsync("teste@teste.com", "assunto", "corpo"));
+                sender.SendEmailAsync(dto));
         }
     }
 }

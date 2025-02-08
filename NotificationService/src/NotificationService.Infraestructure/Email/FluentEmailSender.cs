@@ -1,5 +1,8 @@
 ﻿using FluentEmail.Core;
+using FluentEmail.Core.Models;
 using Microsoft.Extensions.Logging;
+using NotificationService.Application.DTOs;
+using NotificationService.Domain.DTOs;
 using NotificationService.Domain.Interfaces;
 using Polly;
 using Polly.CircuitBreaker;
@@ -27,50 +30,81 @@ namespace NotificationService.Infraestructure.Email
             _circuitBreaker = CreateCircuitBreaker();
         }
 
-        public async Task SendEmailAsync(string to, string subject, string body)
+        /// <summary>
+        /// Envia o e-mail usando FluentEmail com política de retry + circuit breaker
+        /// </summary>
+        public async Task SendEmailAsync(NotificationMessageDto dto)
         {
+            // Wrap das políticas
             var combinedPolicy = Policy.WrapAsync(_retryPolicy, _circuitBreaker);
+
+            // Cria um contexto Polly para logs de retry
+            var pollyContext = new Context();
+            pollyContext["email"] = dto.Email;
 
             try
             {
-                await combinedPolicy.ExecuteAsync(async () =>
+                await combinedPolicy.ExecuteAsync(async (ctx) =>
                 {
-                    var response = await _fluentEmail
-                        .To(to)
-                        .Subject(subject)
-                        .Body(body, isHtml: false)
-                        .SendAsync();
+                    // Monta objeto de e-mail
+                    var email = _fluentEmail
+                        .To(dto.Email)
+                        .Subject(dto.Subject)
+                        .Body(dto.Body, isHtml: false);
 
+                    // Se houver AttachmentPath no DTO, anexa o arquivo
+                    if (!string.IsNullOrEmpty(dto.AttachmentPath))
+                    {
+                        byte[] zipBytes = File.ReadAllBytes(dto.AttachmentPath);
+
+                        email.Attach(new Attachment
+                        {
+                            Data = new MemoryStream(zipBytes),
+                            ContentType = "application/zip",
+                            Filename = Path.GetFileName(dto.AttachmentPath)
+                        });
+                    }
+
+                    // Chama FluentEmail para enviar
+                    var response = await email.SendAsync();
+
+                    // Verifica se houve falha
                     if (!response.Successful)
                     {
                         var errorDetails = string.Join(" | ", response.ErrorMessages);
-                        _logger.LogError("Falha no envio para {Email}. Erros: {Errors}", to, errorDetails);
-                        throw new EmailSendFailedException($"Falha ao enviar e-mail para {to}");
+                        _logger.LogError("Falha ao enviar e-mail para {Email}. Erros: {Errors}", dto.Email, errorDetails);
+                        throw new EmailSendFailedException($"Falha ao enviar e-mail para {dto.Email}");
                     }
 
-                    _logger.LogInformation("E-mail enviado com sucesso para {Email} [ID: {MessageId}]",
-                        to, response.MessageId);
+                    _logger.LogInformation(
+                        "E-mail enviado com sucesso para {Email} [MensagemID: {MessageId}] | Anexo? {HasAttachment}",
+                        dto.Email,
+                        response.MessageId,
+                        string.IsNullOrEmpty(dto.AttachmentPath) ? "Não" : "Sim");
 
-                    return response;
-                });
+                    return response; // devolve para a policy
+                }, pollyContext);
             }
             catch (BrokenCircuitException ex)
             {
-                _logger.LogCritical(ex, "Circuito aberto! Não é possível enviar e-mails temporariamente");
+                _logger.LogCritical(ex, "Circuito aberto! Não é possível enviar e-mails temporariamente (Email: {Email})", dto.Email);
                 throw;
             }
             catch (EmailSendFailedException ex)
             {
-                _logger.LogError(ex, "Falha permanente ao enviar e-mail para {Email}", to);
+                _logger.LogError(ex, "Falha permanente ao enviar e-mail para {Email}", dto.Email);
                 throw;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro inesperado ao enviar e-mail para {Email}", to);
+                _logger.LogError(ex, "Erro inesperado ao enviar e-mail para {Email}", dto.Email);
                 throw;
             }
         }
 
+        /// <summary>
+        /// Política de retry exponencial (2^N) por 3 tentativas
+        /// </summary>
         private AsyncPolicy CreateRetryPolicy()
         {
             return Policy
@@ -80,14 +114,18 @@ namespace NotificationService.Infraestructure.Email
                     sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
                     onRetry: (exception, retryCount, context) =>
                     {
+                        var email = context.ContainsKey("email") ? context["email"].ToString() : "desconhecido";
                         _logger.LogWarning(
                             "Tentativa de reenvio {RetryCount} para {Email}. Erro: {ErrorMessage}",
                             retryCount,
-                            context["email"],
+                            email,
                             exception.Message);
                     });
         }
 
+        /// <summary>
+        /// Política de circuit breaker: após 5 falhas consecutivas, aguarda 1 minuto antes de aceitar novas tentativas
+        /// </summary>
         private AsyncCircuitBreakerPolicy CreateCircuitBreaker()
         {
             return Policy
@@ -98,8 +136,8 @@ namespace NotificationService.Infraestructure.Email
                     onBreak: (ex, breakDelay) =>
                     {
                         _logger.LogCritical(
-                            "Circuito aberto por {BreakDelay} devido a falhas consecutivas. Último erro: {ErrorMessage}",
-                            breakDelay,
+                            "Circuito aberto por {BreakDelay}s devido a falhas consecutivas. Último erro: {ErrorMessage}",
+                            breakDelay.TotalSeconds,
                             ex.Message);
                     },
                     onReset: () =>
@@ -113,6 +151,9 @@ namespace NotificationService.Infraestructure.Email
         }
     }
 
+    /// <summary>
+    /// Exceção customizada para falha de envio
+    /// </summary>
     public class EmailSendFailedException : Exception
     {
         public EmailSendFailedException(string message) : base(message) { }
