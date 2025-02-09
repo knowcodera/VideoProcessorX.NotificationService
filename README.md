@@ -1,7 +1,7 @@
-# VideoProcessorX.NotificationService
+# NotificationService
 
 ## 📌 Visão Geral
-O **VideoProcessorX.NotificationService** é um serviço de notificação robusto para envio de e-mails e gerenciamento de mensagens assíncronas, desenvolvido com **.NET 8**, utilizando **FluentEmail para envio de e-mails**, **Entity Framework Core para persistência de dados**, e **RabbitMQ para mensageria assíncrona**.
+O **NotificationService** é um serviço de notificação robusto para envio de e-mails e gerenciamento de mensagens assíncronas, desenvolvido com **.NET 8**, utilizando **FluentEmail para envio de e-mails**, **Entity Framework Core para persistência de dados**, e **RabbitMQ para mensageria assíncrona**.
 
 ## 🚀 Tecnologias Utilizadas
 - **.NET 8** - Plataforma de desenvolvimento
@@ -55,12 +55,6 @@ Certifique-se de ter instalado:
 - [.NET SDK 8.0](https://dotnet.microsoft.com/en-us/download)
 - [Docker](https://www.docker.com/)
 - [RabbitMQ](https://www.rabbitmq.com/download.html) (caso queira rodar localmente)
-
-### 2️⃣ Clonar o Repositório
-```bash
-git clone https://github.com/seu-usuario/VideoProcessorX.NotificationService.git
-cd VideoProcessorX.NotificationService
-```
 
 ### 3️⃣ Configurar Variáveis de Ambiente
 Crie um arquivo **appsettings.json** no diretório `NotificationService.Presentation` com o seguinte conteúdo:
