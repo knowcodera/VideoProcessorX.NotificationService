@@ -29,66 +29,61 @@ namespace NotificationService.UnitTests
             }
 
             [Fact]
-            public async Task NotifyAsync_DeveEnviarEmailComSucesso_MarcarNotificacaoComoEnviada()
+            public async Task NotifyAsync_ShouldHandleRetriesAndFailure()
             {
                 // Arrange
                 var service = new NotificationEmailService(
                     _emailSenderMock.Object,
                     _unitOfWorkMock.Object,
-                    _loggerMock.Object
-                );
+                    _loggerMock.Object);
 
                 var dto = new NotificationMessageDto
                 {
-                    Email = "teste@teste.com",
-                    Subject = "assunto",
-                    Body = "corpo",
-                    AttachmentPath = null,
-                    IsProcessingUpdate = false
+                    Email = "test@test.com",
+                    Subject = "Test",
+                    Body = "Test Body"
                 };
 
-                // Act
-                await service.NotifyAsync(dto.Email, dto.Subject, dto.Body);
+                _emailSenderMock.Setup(s => s.SendEmailAsync(It.IsAny<NotificationMessageDto>()))
+                    .ThrowsAsync(new Exception("SMTP Error"));
 
-                // Assert
-                _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(), Times.Once);
-                _notificationRepositoryMock.Verify(r => r.CreateAsync(It.IsAny<Notification>()), Times.Once);
-                _emailSenderMock.Verify(s => s.SendEmailAsync(dto), Times.Once);
-                _notificationRepositoryMock.Verify(r => r.UpdateAsync(It.Is<Notification>(n => n.Sent == true)), Times.Once);
-                _unitOfWorkMock.Verify(u => u.CommitAsync(), Times.Once);
+                // Act & Assert
+                await Assert.ThrowsAsync<Exception>(() => service.NotifyAsync(dto.Email, dto.Subject, dto.Body));
+
+                _unitOfWorkMock.Verify(u => u.RollbackAsync(), Times.Once);
+                _notificationRepositoryMock.Verify(r => r.UpdateAsync(It.Is<Notification>(n =>
+                    n.Sent == false &&
+                    n.Attempts == 1 &&
+                    !string.IsNullOrEmpty(n.LastError))), Times.Once);
             }
 
             [Fact]
-            public async Task NotifyAsync_QuandoFalhaNoEnvio_EmailNaoMarcadoComoEnviado_FazRollback()
+            public async Task NotifyAsync_ShouldHandleAttachmentDownloadFailure()
             {
-                //// Arrange
-                //var service = new NotificationEmailService(
-                //    _emailSenderMock.Object,
-                //    _unitOfWorkMock.Object,
-                //    _loggerMock.Object
-                //);
+                // Arrange
+                var fileStorageMock = new Mock<IFileStorageService>();
+                fileStorageMock.Setup(f => f.GetFileStreamAsync(It.IsAny<string>()))
+                    .ReturnsAsync((Stream)null);
 
-                //var dto = new NotificationMessageDto
-                //{
-                //    Email = "teste@teste.com",
-                //    Subject = "assunto",
-                //    Body = "corpo",
-                //    AttachmentPath = null,
-                //    IsProcessingUpdate = false
-                //};
+                var service = new NotificationEmailService(
+                    _emailSenderMock.Object,
+                    _unitOfWorkMock.Object,
+                    _loggerMock.Object);
 
-                //_emailSenderMock
-                //    .Setup(s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
-                //    .ThrowsAsync(new Exception("Falha no servidor SMTP"));
+                var dto = new NotificationMessageDto
+                {
+                    Email = "test@test.com",
+                    Subject = "Test",
+                    Body = "Test Body",
+                    AttachmentPath = "invalid/path.zip"
+                };
 
-                //// Act & Assert
-                //await Assert.ThrowsAsync<Exception>(() => service.NotifyAsync(dto.Email, dto.Subject, dto.Body));
+                // Act & Assert
+                await Assert.ThrowsAsync<Exception>(() => service.NotifyAsync(dto.Email, dto.Subject, dto.Body));
 
-                //_unitOfWorkMock.Verify(u => u.BeginTransactionAsync(), Times.Once);
-                //_notificationRepositoryMock.Verify(r => r.CreateAsync(It.IsAny<Notification>()), Times.Once);
-                //_unitOfWorkMock.Verify(u => u.RollbackAsync(), Times.Once);
-                //_notificationRepositoryMock.Verify(r => r.UpdateAsync(It.Is<Notification>(n => n.Sent == false && n.Attempts == 2)), Times.Once);
-                //_unitOfWorkMock.Verify(u => u.CommitAsync(), Times.Never);
+                _loggerMock.Verify(log => log.LogWarning(
+                    "Não foi possível obter o stream do blob: {Path}",
+                    dto.AttachmentPath), Times.Once);
             }
         }
     }

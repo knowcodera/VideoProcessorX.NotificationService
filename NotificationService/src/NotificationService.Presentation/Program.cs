@@ -52,6 +52,7 @@ builder.Services.AddHttpClient("EmailSender")
             resilienceConfig,
             services.GetRequiredService<ILogger<Program>>()));
 
+builder.Services.AddScoped<IFileStorageService, AzureBlobStorageService>();
 
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();

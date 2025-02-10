@@ -40,7 +40,7 @@ namespace NotificationService.Infraestructure.Messaging
             {
                 var factory = new ConnectionFactory()
                 {
-                    HostName = _configuration["RabbitMQ:HostName"],
+                    HostName = _configuration["RabbitMQ:Host"],
                     UserName = _configuration["RabbitMQ:UserName"],
                     Password = _configuration["RabbitMQ:Password"],
                     DispatchConsumersAsync = true,
