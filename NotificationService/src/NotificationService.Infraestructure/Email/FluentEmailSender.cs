@@ -1,7 +1,6 @@
 ﻿using FluentEmail.Core;
 using FluentEmail.Core.Models;
 using Microsoft.Extensions.Logging;
-using NotificationService.Application.DTOs;
 using NotificationService.Domain.DTOs;
 using NotificationService.Domain.Interfaces;
 using Polly;
@@ -14,31 +13,28 @@ namespace NotificationService.Infraestructure.Email
         private readonly IFluentEmail _fluentEmail;
         private readonly ILogger<FluentEmailSender> _logger;
 
-        // Políticas de resiliência (singleton por instância)
         private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
         private readonly AsyncPolicy _retryPolicy;
+        private readonly IFileStorageService _fileStorageService;
 
         public FluentEmailSender(
             IFluentEmail fluentEmail,
-            ILogger<FluentEmailSender> logger)
+            ILogger<FluentEmailSender> logger,
+            IFileStorageService fileStorageService)
         {
             _fluentEmail = fluentEmail;
             _logger = logger;
 
-            // Configuração das políticas
             _retryPolicy = CreateRetryPolicy();
             _circuitBreaker = CreateCircuitBreaker();
+            _fileStorageService = fileStorageService;
         }
 
-        /// <summary>
-        /// Envia o e-mail usando FluentEmail com política de retry + circuit breaker
-        /// </summary>
         public async Task SendEmailAsync(NotificationMessageDto dto)
         {
-            // Wrap das políticas
+        
             var combinedPolicy = Policy.WrapAsync(_retryPolicy, _circuitBreaker);
 
-            // Cria um contexto Polly para logs de retry
             var pollyContext = new Context();
             pollyContext["email"] = dto.Email;
 
@@ -46,29 +42,39 @@ namespace NotificationService.Infraestructure.Email
             {
                 await combinedPolicy.ExecuteAsync(async (ctx) =>
                 {
-                    // Monta objeto de e-mail
                     var email = _fluentEmail
                         .To(dto.Email)
                         .Subject(dto.Subject)
                         .Body(dto.Body, isHtml: false);
 
-                    // Se houver AttachmentPath no DTO, anexa o arquivo
                     if (!string.IsNullOrEmpty(dto.AttachmentPath))
                     {
-                        byte[] zipBytes = File.ReadAllBytes(dto.AttachmentPath);
-
-                        email.Attach(new Attachment
+                        try
                         {
-                            Data = new MemoryStream(zipBytes),
-                            ContentType = "application/zip",
-                            Filename = Path.GetFileName(dto.AttachmentPath)
-                        });
+                            var stream = await _fileStorageService.GetFileStreamAsync(dto.AttachmentPath);
+                            if (stream != null)
+                            {
+                                var fileName = Path.GetFileName(dto.AttachmentPath);
+                                email.Attach(new Attachment
+                                {
+                                    Data = stream,
+                                    ContentType = "application/zip",
+                                    Filename = Path.GetFileName(dto.AttachmentPath)
+                                });
+                            }
+                            else
+                            {
+                                _logger.LogWarning("Não foi possível obter o stream do blob: {Path}", dto.AttachmentPath);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Erro ao baixar anexo do blob: {Path}", dto.AttachmentPath);
+                            throw;
+                        }
                     }
 
-                    // Chama FluentEmail para enviar
                     var response = await email.SendAsync();
-
-                    // Verifica se houve falha
                     if (!response.Successful)
                     {
                         var errorDetails = string.Join(" | ", response.ErrorMessages);

@@ -1,9 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using NotificationService.Domain.DTOs;
 using NotificationService.Domain.Entities;
 using NotificationService.Domain.Interfaces;
-using System.Text;
-using System.Text.Json;
 
 namespace NotificationService.Application.Services
 {
@@ -39,13 +38,11 @@ namespace NotificationService.Application.Services
             {
                 await _unitOfWork.BeginTransactionAsync();
 
-                // Registra a tentativa
                 notification.Attempts++;
                 await _unitOfWork.Notifications.CreateAsync(notification);
 
                 var dto = JsonSerializer.Deserialize<NotificationMessageDto>(body);
 
-                // Tenta enviar o e-mail
                 await _emailSender.SendEmailAsync(dto);
 
                 // Atualiza status

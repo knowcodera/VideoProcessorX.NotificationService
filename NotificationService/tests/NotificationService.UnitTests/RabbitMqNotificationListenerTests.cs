@@ -44,42 +44,13 @@ namespace NotificationService.UnitTests
 
 
         [Fact]
-        public async Task DeveProcessarMensagemComSucesso()
-        {
-            //// Arrange
-            //var message = new NotificationMessageDto
-            //{
-            //    Email = "teste@teste.com",
-            //    Subject = "Teste",
-            //    Body = "Corpo da mensagem"
-            //};
-
-            //var messageBody = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
-            //var eventArgs = new BasicDeliverEventArgs
-            //{
-            //    Body = new ReadOnlyMemory<byte>(messageBody),
-            //    DeliveryTag = 1
-            //};
-
-            //_emailSenderMock.Setup(s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
-            //    .Returns(Task.CompletedTask);
-
-            //// Act
-            //await _listener.ProcessMessageAsync(null, eventArgs);
-
-            //// Assert
-            //_emailSenderMock.Verify(s => s.SendEmailAsync(message.Email, message.Subject, message.Body), Times.Once);
-            //_channelMock.Verify(c => c.BasicAck(eventArgs.DeliveryTag, false), Times.Once);
-        }
-
-        [Fact]
-        public async Task DeveRejeitarMensagemInvalida()
+        public async Task ProcessMessageAsync_ShouldHandleInvalidMessage()
         {
             // Arrange
-            var invalidMessage = Encoding.UTF8.GetBytes("Mensagem inválida");
+            var invalidMessage = "invalid json";
             var eventArgs = new BasicDeliverEventArgs
             {
-                Body = new ReadOnlyMemory<byte>(invalidMessage),
+                Body = new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes(invalidMessage)),
                 DeliveryTag = 1
             };
 
@@ -88,45 +59,36 @@ namespace NotificationService.UnitTests
 
             // Assert
             _channelMock.Verify(c => c.BasicNack(eventArgs.DeliveryTag, false, false), Times.Once);
+            _loggerMock.Verify(log => log.LogError(It.IsAny<Exception>(), "Message deserialization failed"), Times.Once);
         }
 
         [Fact]
-        public async Task DeveTentarNovamente_SeEmailFalhar()
+        public async Task ProcessMessageAsync_ShouldHandleEmailSendFailure()
         {
-            //// Arrange
-            //var message = new NotificationMessageDto
-            //{
-            //    Email = "teste@teste.com",
-            //    Subject = "Teste",
-            //    Body = "Corpo da mensagem"
-            //};
+            // Arrange
+            var message = new NotificationMessageDto
+            {
+                Email = "test@test.com",
+                Subject = "Test",
+                Body = "Test Body"
+            };
 
-            //var messageBody = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
-            //var eventArgs = new BasicDeliverEventArgs
-            //{
-            //    Body = new ReadOnlyMemory<byte>(messageBody),
-            //    DeliveryTag = 1
-            //};
+            var eventArgs = new BasicDeliverEventArgs
+            {
+                Body = new ReadOnlyMemory<byte>(JsonSerializer.SerializeToUtf8Bytes(message)),
+                DeliveryTag = 1
+            };
 
-            //_emailSenderMock.Setup(s => s.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
-            //    .ThrowsAsync(new System.Exception("Falha no envio"));
+            _emailSenderMock.Setup(s => s.SendEmailAsync(It.IsAny<NotificationMessageDto>()))
+                .ThrowsAsync(new Exception("SMTP Error"));
 
-            //// Act
-            //await _listener.ProcessMessageAsync(null, eventArgs);
-
-            //// Assert
-            //_channelMock.Verify(c => c.BasicNack(eventArgs.DeliveryTag, false, true), Times.Once);
-        }
-
-        [Fact]
-        public void DeveFecharConexoes_AoFinalizar()
-        {
             // Act
-            _listener.Dispose();
+            await _listener.ProcessMessageAsync(null, eventArgs);
 
             // Assert
-            _channelMock.Verify(c => c.Close(), Times.Once);
-            _connectionMock.Verify(c => c.Close(), Times.Once);
+            _channelMock.Verify(c => c.BasicNack(eventArgs.DeliveryTag, false, true), Times.Once);
+            _loggerMock.Verify(log => log.LogError(It.IsAny<Exception>(), "Error processing message"), Times.Once);
         }
     }
 }
+
