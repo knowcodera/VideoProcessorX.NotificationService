@@ -111,6 +111,18 @@ docker-compose up -d
 | POST   | `/api/email/test`    | Envia um e-mail de teste         
 | GET    | `/api/health`        | Verifica a saúde da aplicação     
 
+
+## 🤖 **Cobertura de Testes**  
+
+| Pacote                                      | Cobertura de Linhas | Cobertura de Branches |
+|---------------------------------------------|---------------------|-----------------------|
+| `NotificationService.Application`          | 83.72%              | 100%                  |
+| `NotificationService.Domain`               | 92.85%              | 100%                  |
+| `NotificationService.Infrastructure`       | 1.72%               | 0%                    |
+| `NotificationService.Presentation`         | 0%                  | 0%                    |
+
+
+
 ## 📜 Licença
 Este projeto está sob a licença **MIT**.
 
