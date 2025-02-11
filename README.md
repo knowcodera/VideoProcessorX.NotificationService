@@ -1,4 +1,4 @@
-# NotificationService
+# NotificationService - teste
 
 ## 📌 Visão Geral
 O **NotificationService** é um serviço de notificação robusto para envio de e-mails e gerenciamento de mensagens assíncronas, desenvolvido com **.NET 8**, utilizando **FluentEmail para envio de e-mails**, **Entity Framework Core para persistência de dados**, e **RabbitMQ para mensageria assíncrona**.
